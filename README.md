@@ -1,3 +1,17 @@
+# Released Ctags
+
+This is just [Universal Ctags](https://github.com/universal-ctags/ctags) with version numbers and git tags added.
+All credit goes to the Universal Ctags authors, primarily Masatake YAMATO. No real maintenance happens here.
+
+Nagging the author to make releases is not really respectful of their time and judgement,
+but the GPLv2 (in both practice and spirit) encourages copying and modification at the whim
+of the user, so here I am adding the only thing I found myself missing in the upstream project:
+release version numbers. See https://github.com/universal-ctags/ctags/issues/1038 for more context.
+
+So far, the plan is to only make "5.99.x" "beta" releases, at somewhat arbitrary points
+in the development, until the upstream makes 6.0 release, at which point this repo will cease.
+
+
 # Universal Ctags
 
 [![Build Status](https://travis-ci.org/universal-ctags/ctags.svg?branch=master)](https://travis-ci.org/universal-ctags/ctags)
