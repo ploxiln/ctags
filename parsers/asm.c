@@ -190,7 +190,7 @@ static void makeAsmTag (
 		const bool labelCandidate,
 		const bool nameFollows,
 		const bool directive,
-		unsigned int *lastMacroCorkIndex)
+		int *lastMacroCorkIndex)
 {
 	if (vStringLength (name) > 0)
 	{
@@ -225,14 +225,14 @@ static void makeAsmTag (
 			case K_MACRO:
 				*lastMacroCorkIndex = makeSimpleTag (operator,
 													 kind_for_directive);
+				if (*lastMacroCorkIndex != CORK_NIL)
+					registerEntry (*lastMacroCorkIndex);
 				break;
 			case K_PSUEDO_MACRO_END:
-				if (*lastMacroCorkIndex != CORK_NIL)
-				{
-					macro_tag = getEntryInCorkQueue (*lastMacroCorkIndex);
+				macro_tag = getEntryInCorkQueue (*lastMacroCorkIndex);
+				if (macro_tag)
 					macro_tag->extensionFields.endLine = getInputLineNumber ();
-					*lastMacroCorkIndex = CORK_NIL;
-				}
+				*lastMacroCorkIndex = CORK_NIL;
 				break;
 			case K_SECTION:
 				makeSimpleRefTag (operator,
@@ -315,7 +315,7 @@ static void findAsmTags (void)
 			 KIND_GHOST_INDEX, 0, KIND_GHOST_INDEX, KIND_GHOST_INDEX, 0, 0,
 			 FIELD_UNKNOWN);
 
-	unsigned int lastMacroCorkIndex = CORK_NIL;
+	 int lastMacroCorkIndex = CORK_NIL;
 
 	while ((line = asmReadLineFromInputFile ()) != NULL)
 	{
@@ -343,10 +343,17 @@ static void findAsmTags (void)
 		}
 
 		cp = readSymbol (cp, name);
-		if (vStringLength (name) > 0  &&  *cp == ':')
+		if (vStringLength (name) > 0)
 		{
-			labelCandidate = true;
-			++cp;
+			if (*cp == ':')
+			{
+				labelCandidate = true;
+				++cp;
+			}
+			else if (anyKindEntryInScope (CORK_NIL,
+										  vStringValue (name),
+										  K_MACRO))
+				labelCandidate = false;
 		}
 
 		if (! isspace ((int) *cp)  &&  *cp != '\0')
@@ -412,6 +419,6 @@ extern parserDefinition* AsmParser (void)
 	def->keywordTable = AsmKeywords;
 	def->keywordCount = ARRAY_SIZE (AsmKeywords);
 	def->selectLanguage = selectors;
-	def->useCork = CORK_QUEUE;
+	def->useCork = CORK_QUEUE | CORK_SYMTAB;
 	return def;
 }

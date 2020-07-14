@@ -86,13 +86,14 @@ struct sTclParserState {
 	enum TclTokenType lastTokenType;
 };
 
-#define TOKEN_PSTATE(TOKEN) \
-	TOKENX(TOKEN, struct tokenExtra)->pstate
-
-struct tokenExtra {
+typedef struct sTclToken {
+	tokenInfo base;
 	int scopeIndex;
 	struct sTclParserState *pstate;
-};
+} tclToken;
+
+#define TCL(TOKEN) ((tclToken *)TOKEN)
+#define TCL_PSTATE(TOKEN) (TCL(TOKEN)->pstate)
 
 static struct tokenTypePair typePairs [] = {
 	{ '{', '}' },
@@ -106,7 +107,7 @@ static struct tokenInfoClass tclTokenInfoClass = {
 	.keywordNone      = KEYWORD_NONE,
 	.typeForKeyword   = TOKEN_TCL_KEYWORD,
 	.typeForEOF       = TOKEN_TCL_EOF,
-	.extraSpace       = sizeof (struct tokenExtra),
+	.extraSpace       = sizeof (tclToken) - sizeof (tokenInfo),
 	.pairs            = typePairs,
 	.pairCount        = ARRAY_SIZE (typePairs),
 	.init             = initToken,
@@ -122,16 +123,16 @@ extern tokenInfo *newTclToken (void *pstate)
 
 static void clearToken (tokenInfo *token)
 {
-	TOKENX (token, struct tokenExtra)->scopeIndex = CORK_NIL;
-	TOKENX (token, struct tokenExtra)->pstate = NULL;
+	TCL (token)->scopeIndex = CORK_NIL;
+	TCL (token)->pstate = NULL;
 }
 
 static void copyToken (tokenInfo *dest, tokenInfo *src, void *data CTAGS_ATTR_UNUSED)
 {
-	TOKENX (dest, struct tokenExtra)->scopeIndex =
-		TOKENX (src, struct tokenExtra)->scopeIndex;
-	TOKENX (dest, struct tokenExtra)->pstate =
-		TOKENX (src, struct tokenExtra)->pstate;
+	TCL (dest)->scopeIndex =
+		TCL (src)->scopeIndex;
+	TCL (dest)->pstate =
+		TCL (src)->pstate;
 }
 
 static void readString (vString *string)
@@ -193,7 +194,7 @@ static keywordId resolveKeyword (vString *string)
 
 static void initToken (tokenInfo *token, void *data)
 {
-	TOKENX (token, struct tokenExtra)->pstate = data;
+	TCL (token)->pstate = data;
 }
 
 static void readToken0 (tokenInfo *const token, struct sTclParserState *pstate)
@@ -312,7 +313,7 @@ static void readToken0 (tokenInfo *const token, struct sTclParserState *pstate)
 
 static void readToken (tokenInfo *const token, void *data)
 {
-	struct sTclParserState *pstate = TOKEN_PSTATE(token);
+	struct sTclParserState *pstate = TCL_PSTATE(token);
 
 	readToken0 (token, pstate);
 
@@ -378,7 +379,7 @@ static void notifyPackageRequirement (tokenInfo *const token)
 		{
 			enterSubparser(sub);
 			tclsub->packageRequirementNotify (tclsub, tokenString (token),
-											  TOKEN_PSTATE(token));
+											  TCL_PSTATE(token));
 			leaveSubparser();
 		}
 	}
@@ -396,13 +397,13 @@ static void notifyNamespaceImport (tokenInfo *const token)
 		{
 			enterSubparser(sub);
 			tclsub->namespaceImportNotify (tclsub, tokenString (token),
-										   TOKEN_PSTATE(token));
+										   TCL_PSTATE(token));
 			leaveSubparser();
 		}
 	}
 }
 
-static int notifyCommand (tokenInfo *const token, unsigned int parent)
+static int notifyCommand (tokenInfo *const token, int parent)
 {
 	subparser *sub;
 	int r = CORK_NIL;
@@ -415,7 +416,7 @@ static int notifyCommand (tokenInfo *const token, unsigned int parent)
 		{
 			enterSubparser(sub);
 			r = tclsub->commandNotify (tclsub, tokenString (token), parent,
-									   TOKEN_PSTATE(token));
+									   TCL_PSTATE(token));
 			leaveSubparser();
 			if (r != CORK_NIL)
 				break;
@@ -456,7 +457,7 @@ static void collectSignature (const tokenInfo *const token, collector * col)
 }
 
 static void parseProc (tokenInfo *const token,
-					   unsigned int parent)
+					   int parent)
 {
 	int index = CORK_NIL;
 	int index_fq = CORK_NIL;
@@ -476,16 +477,14 @@ static void parseProc (tokenInfo *const token,
 
 			int len  = (last - tokenString (token));
 			vString *ns = vStringNew();
+			tagEntryInfo *e_parent = getEntryInCorkQueue (parent);
 			if (isAbsoluteIdentifier (token))
 			{
 				if (len > 2)
 					vStringNCopy (ns, token->string, len - 2);
 			}
-			else if (parent == CORK_NIL)
-				vStringCopy (ns, token->string);
-			else
+			else if (e_parent)
 			{
-				tagEntryInfo *e_parent = getEntryInCorkQueue (parent);
 				const char * sep = scopeSeparatorFor (getInputLanguage(),
 													  K_PROCEDURE,
 													  e_parent->kindIndex);
@@ -493,6 +492,8 @@ static void parseProc (tokenInfo *const token,
 				vStringCatS(ns, sep);
 				vStringNCopy(ns, token->string, len - 2);
 			}
+			else
+				vStringCopy (ns, token->string);
 
 			if (vStringLength(ns) > 0)
 			{
@@ -516,7 +517,8 @@ static void parseProc (tokenInfo *const token,
 
 				index_fq = makeSimpleTag (ns, K_PROCEDURE);
 				tagEntryInfo *e_fq = getEntryInCorkQueue (index_fq);
-				markTagExtraBit (e_fq, XTAG_QUALIFIED_TAGS);
+				if (e_fq)
+					markTagExtraBit (e_fq, XTAG_QUALIFIED_TAGS);
 			}
 			vStringDelete (ns);
 		}
@@ -525,7 +527,8 @@ static void parseProc (tokenInfo *const token,
 			tagEntryInfo *ep;
 			index = makeSimpleTag (token->string, K_PROCEDURE);
 			ep = getEntryInCorkQueue (index);
-			ep->extensionFields.scopeIndex = parent;
+			if (ep)
+				ep->extensionFields.scopeIndex = parent;
 		}
 	}
 
@@ -556,11 +559,9 @@ static void parseProc (tokenInfo *const token,
 		skipToEndOfCmdline(token);
 	}
 
-	if (index != CORK_NIL)
+	tagEntryInfo *e = getEntryInCorkQueue (index);
+	if (e)
 	{
-		tagEntryInfo *e;
-
-		e = getEntryInCorkQueue (index);
 		e->extensionFields.endLine = token->lineNumber;
 
 		if (signature)
@@ -569,20 +570,20 @@ static void parseProc (tokenInfo *const token,
 			signature = NULL;
 		}
 
-		if (index_fq != CORK_NIL)
+		tagEntryInfo *e_fq = getEntryInCorkQueue (index_fq);
+		if (e_fq)
 		{
 			const char *sig = e->extensionFields.signature;
-			e = getEntryInCorkQueue (index_fq);
-			e->extensionFields.endLine = token->lineNumber;
+			e_fq->extensionFields.endLine = token->lineNumber;
 			if (sig)
-				e->extensionFields.signature = eStrdup (sig);
+				e_fq->extensionFields.signature = eStrdup (sig);
 		}
 	}
 	vStringDelete (signature);	/* NULL is acceptable */
 }
 
 static void parseNamespace (tokenInfo *const token,
-							unsigned int parent)
+							int parent)
 {
 	tokenRead (token);
 	if (tokenIsEOF(token))
@@ -617,11 +618,9 @@ static void parseNamespace (tokenInfo *const token,
 	}
 
 	int index = makeSimpleTag (token->string, K_NAMESPACE);
-	if (parent != CORK_NIL && !isAbsoluteIdentifier(token))
-	{
-		tagEntryInfo *e = getEntryInCorkQueue (index);
+	tagEntryInfo *e = getEntryInCorkQueue (index);
+	if (e && parent != CORK_NIL && !isAbsoluteIdentifier(token))
 		e->extensionFields.scopeIndex = parent;
-	}
 
 	tokenRead (token);
 	if (token->type != '{')
@@ -643,8 +642,8 @@ static void parseNamespace (tokenInfo *const token,
 		}
 		else if (token->type == '}')
 		{
-			tagEntryInfo *e = getEntryInCorkQueue (index);
-			e->extensionFields.endLine = token->lineNumber;
+			if (e)
+				e->extensionFields.endLine = token->lineNumber;
 			break;
 		}
 		else

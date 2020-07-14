@@ -326,7 +326,7 @@ static void clearPoolToken (void *data)
 static void deletePoolToken (void *data)
 {
 	tokenInfo *token = data;
-	if (token->string) vStringDelete (token->string);
+	vStringDelete (token->string); /* NULL is acceptable */
 	eFree (token);
 }
 
@@ -1673,15 +1673,19 @@ static void parseClassBody (const int scope, tokenInfo *const token)
 
 	if (! parsed)
 	{
-		if (inheritance) vStringDelete (inheritance);
+		vStringDelete (inheritance); /* NULL is acceptable. */
 		return;
 	}
 
 	if (inheritance)
 	{
 		tagEntryInfo *klass = getEntryInCorkQueue (scope);
-		klass->extensionFields.inheritance = vStringDeleteUnwrap (inheritance);
-		inheritance = NULL;
+		if (klass)
+		{
+			klass->extensionFields.inheritance = vStringDeleteUnwrap (inheritance);
+			inheritance = NULL;
+		}
+		vStringDelete (inheritance);
 	}
 
 	tokenInfo *member = NULL;

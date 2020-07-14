@@ -37,6 +37,7 @@
 #endif
 
 #include <stdint.h>
+#include <limits.h>  /* to define INT_MAX */
 
 #include "debug.h"
 #include "entry_p.h"
@@ -91,7 +92,7 @@ typedef struct eTagFile {
 	struct sMax { size_t line, tag; } max;
 	vString *vLine;
 
-	unsigned int cork;
+	int cork;
 	unsigned int corkFlags;
 	ptrArray *corkQueue;
 
@@ -100,7 +101,7 @@ typedef struct eTagFile {
 
 typedef struct sTagEntryInfoX  {
 	tagEntryInfo slot;
-	unsigned int corkIndex;
+	int corkIndex;
 	struct rb_root symtab;
 	struct rb_node symnode;
 } tagEntryInfoX;
@@ -387,20 +388,13 @@ extern void openTagFile (void)
 	 */
 	if (TagsToStdout)
 	{
-		if (Option.sorted == SO_UNSORTED)
+		if (Option.interactive == INTERACTIVE_SANDBOX)
 		{
-			/* Passing NULL for keeping stdout open.
-			   stdout can be used for debugging purpose.*/
-			TagFile.mio = mio_new_fp(stdout, NULL);
-			TagFile.name = eStrdup ("/dev/stdout");
+			TagFile.mio = mio_new_memory (NULL, 0, eRealloc, eFreeNoNullCheck);
+			TagFile.name = NULL;
 		}
 		else
-		{
-			/* Open a tempfile with read and write mode. Read mode is used when
-			 * write the result to stdout. */
 			TagFile.mio = tempFile ("w+", &TagFile.name);
-		}
-
 		if (isXtagEnabled (XTAG_PSEUDO_TAGS))
 			addCommonPseudoTags ();
 	}
@@ -562,6 +556,12 @@ static void resizeTagFile (const long newSize)
 {
 	int result;
 
+	if (!TagFile.name)
+	{
+		mio_try_resize (TagFile.mio, newSize);
+		return;
+	}
+
 #ifdef USE_REPLACEMENT_TRUNCATE
 	result = replacementTruncate (TagFile.name, newSize);
 #else
@@ -610,13 +610,6 @@ extern void closeTagFile (const bool resize)
 		writeEtagsIncludes (TagFile.mio);
 	mio_flush (TagFile.mio);
 
-	if ((TagsToStdout && (Option.sorted == SO_UNSORTED)))
-	{
-		if (mio_unref (TagFile.mio) != 0)
-			error (FATAL | PERROR, "cannot close tag file");
-		goto out;
-	}
-
 	abort_if_ferror (TagFile.mio);
 	desiredSize = mio_tell (TagFile.mio);
 	mio_seek (TagFile.mio, 0L, SEEK_END);
@@ -630,7 +623,7 @@ extern void closeTagFile (const bool resize)
 	{
 		DebugStatement (
 			debugPrintf (DEBUG_STATUS, "shrinking %s from %ld to %ld bytes\n",
-				TagFile.name, size, desiredSize); )
+				TagFile.name? TagFile.name: "<mio>", size, desiredSize); )
 		resizeTagFile (desiredSize);
 	}
 	sortTagFile ();
@@ -638,11 +631,13 @@ extern void closeTagFile (const bool resize)
 	{
 		if (mio_unref (TagFile.mio) != 0)
 			error (FATAL | PERROR, "cannot close tag file");
-		remove (tagFileName ());  /* remove temporary file */
+		if (TagFile.name)
+			remove (TagFile.name);  /* remove temporary file */
 	}
 
- out:
-	eFree (TagFile.name);
+	TagFile.mio = NULL;
+	if (TagFile.name)
+		eFree (TagFile.name);
 	TagFile.name = NULL;
 }
 
@@ -813,16 +808,13 @@ extern void getTagScopeInformation (tagEntryInfo *const tag,
 	if (name)
 		*name = NULL;
 
+	const tagEntryInfo * scope = getEntryInCorkQueue (tag->extensionFields.scopeIndex);
 	if (tag->extensionFields.scopeKindIndex == KIND_GHOST_INDEX
 	    && tag->extensionFields.scopeName == NULL
-	    && tag->extensionFields.scopeIndex != CORK_NIL
+	    && scope
 	    && ptrArrayCount (TagFile.corkQueue) > 0)
 	{
-		const tagEntryInfo * scope;
-		char *full_qualified_scope_name;
-
-		scope = getEntryInCorkQueue (tag->extensionFields.scopeIndex);
-		full_qualified_scope_name = getFullQualifiedScopeNameFromCorkQueue(scope);
+		char *full_qualified_scope_name = getFullQualifiedScopeNameFromCorkQueue(scope);
 		Assert (full_qualified_scope_name);
 
 		/* Make the information reusable to generate full qualified entry, and xformat output*/
@@ -996,13 +988,9 @@ extern void attachParserFieldToCorkEntry (int index,
 					 fieldType ftype,
 					 const char *value)
 {
-	tagEntryInfo * tag;
-
-	if (index == CORK_NIL)
-		return;
-
-	tag = getEntryInCorkQueue(index);
-	attachParserField (tag, true, ftype, value);
+	tagEntryInfo * tag = getEntryInCorkQueue (index);
+	if (tag)
+		attachParserField (tag, true, ftype, value);
 }
 
 extern const tagField* getParserFieldForIndex (const tagEntryInfo * tag, int index)
@@ -1017,6 +1005,17 @@ extern const tagField* getParserFieldForIndex (const tagEntryInfo * tag, int ind
 		unsigned int n = index - PRE_ALLOCATED_PARSER_FIELDS;
 		return ptrArrayItem(tag->parserFieldsDynamic, n);
 	}
+}
+
+extern const char* getParserFieldValueForType (tagEntryInfo *const tag, fieldType ftype)
+{
+	for (int i = 0; i < tag->usedParserFields; i++)
+	{
+		const tagField *f = getParserFieldForIndex (tag, i);
+		if (f && f->ftype == ftype)
+			return f->value;
+	}
+	return NULL;
 }
 
 static void copyParserFields (const tagEntryInfo *const tag, tagEntryInfo* slot)
@@ -1227,7 +1226,7 @@ static void corkSymtabPut (tagEntryInfoX *scope, const char* name, tagEntryInfoX
 	rb_insert_color(&item->symnode, root);
 }
 
-extern bool foreachEntriesInScope (unsigned int corkIndex,
+extern bool foreachEntriesInScope (int corkIndex,
 								   const char *name,
 								   entryForeachFunc func,
 								   void *data)
@@ -1290,7 +1289,17 @@ extern bool foreachEntriesInScope (unsigned int corkIndex,
 		}
 	}
 	else
+	{
 		last = rb_last(root);
+		verbose ("last for %d<%p>: %p\n", corkIndex, root, last);
+	}
+
+	if (!last)
+	{
+		verbose ("symtbl[>V] %s->%p\n", name? name: "(null)", NULL);
+		return true;			/* Nothing here in this node. */
+	}
+
 	verbose ("symtbl[>|] %s->%p\n", name, &container_of(last, tagEntryInfoX, symnode)->slot);
 
 	struct rb_node *cursor = last;
@@ -1314,15 +1323,15 @@ extern bool foreachEntriesInScope (unsigned int corkIndex,
 	return true;
 }
 
-static bool findName (unsigned int corkIndex, tagEntryInfo *entry, void *data)
+static bool findName (int corkIndex, tagEntryInfo *entry, void *data)
 {
 	int *index = data;
 
-	*index =  (int)corkIndex;
+	*index =  corkIndex;
 	return false;
 }
 
-int anyEntryInScope (unsigned int corkIndex, const char *name)
+int anyEntryInScope (int corkIndex, const char *name)
 {
 	int index = CORK_NIL;
 
@@ -1332,9 +1341,83 @@ int anyEntryInScope (unsigned int corkIndex, const char *name)
 	return CORK_NIL;
 }
 
-extern void registerEntry (unsigned int corkIndex)
+struct anyKindsEntryInScopeData {
+	int  index;
+	const int *kinds;
+	int  count;
+};
+
+static bool findNameOfKinds (int corkIndex, tagEntryInfo *entry, void *data)
+{
+	struct anyKindsEntryInScopeData * kdata = data;
+
+	for (int i = 0; i < kdata->count; i++)
+	{
+		int k = kdata->kinds [i];
+		if (entry->kindIndex == k)
+		{
+			kdata->index = corkIndex;
+			return false;
+		}
+	}
+	return true;
+}
+
+int anyKindEntryInScope (int corkIndex,
+						 const char *name, int kind)
+{
+	return anyKindsEntryInScope (corkIndex, name, &kind, 1);
+}
+
+int anyKindsEntryInScope (int corkIndex,
+						  const char *name,
+						  const int *kinds, int count)
+{
+	struct anyKindsEntryInScopeData data = {
+		.index = CORK_NIL,
+		.kinds = kinds,
+		.count = count,
+	};
+
+	if (foreachEntriesInScope (corkIndex, name, findNameOfKinds, &data) == false)
+		return data.index;
+
+	return CORK_NIL;
+}
+
+int anyKindsEntryInScopeRecursive (int corkIndex,
+								   const char *name,
+								   const int *kinds, int count)
+{
+	struct anyKindsEntryInScopeData data = {
+		.index = CORK_NIL,
+		.kinds = kinds,
+		.count = count,
+	};
+
+	tagEntryInfo *e;
+	do
+	{
+		if (foreachEntriesInScope (corkIndex, name, findNameOfKinds, &data) == false)
+			return data.index;
+
+		if (corkIndex == CORK_NIL)
+			break;
+
+		e = getEntryInCorkQueue (corkIndex);
+		if (!e)
+			break;
+		corkIndex = e->extensionFields.scopeIndex;
+	}
+	while (1);
+
+	return CORK_NIL;
+}
+
+extern void registerEntry (int corkIndex)
 {
 	Assert (TagFile.corkFlags & CORK_SYMTAB);
+	Assert (corkIndex != CORK_NIL);
 
 	tagEntryInfoX *e = ptrArrayItem (TagFile.corkQueue, corkIndex);
 	{
@@ -1343,12 +1426,29 @@ extern void registerEntry (unsigned int corkIndex)
 	}
 }
 
-static unsigned int queueTagEntry(const tagEntryInfo *const tag)
+static int queueTagEntry(const tagEntryInfo *const tag)
 {
-	unsigned int corkIndex;
+	static bool warned;
+
+	int corkIndex;
 	tagEntryInfoX * entry = copyTagEntry (tag,
 										TagFile.corkFlags);
-	corkIndex = ptrArrayAdd (TagFile.corkQueue, entry);
+
+	if (ptrArrayCount (TagFile.corkQueue) == (size_t)INT_MAX)
+	{
+		if (!warned)
+		{
+			warned = true;
+			error (WARNING,
+				   "The tag entry queue overflows; drop the tag entry at %lu in %s",
+				   tag->lineNumber,
+				   tag->inputFileName);
+		}
+		return CORK_NIL;
+	}
+	warned = false;
+
+	corkIndex = (int)ptrArrayAdd (TagFile.corkQueue, entry);
 	entry->corkIndex = corkIndex;
 
 	return corkIndex;
@@ -1532,9 +1632,9 @@ extern void uncorkTagFile(void)
 	TagFile.corkQueue = NULL;
 }
 
-extern tagEntryInfo *getEntryInCorkQueue   (unsigned int n)
+extern tagEntryInfo *getEntryInCorkQueue   (int n)
 {
-	if ((CORK_NIL < n) && (n < ptrArrayCount (TagFile.corkQueue)))
+	if ((CORK_NIL < n) && (((size_t)n) < ptrArrayCount (TagFile.corkQueue)))
 		return ptrArrayItem (TagFile.corkQueue, n);
 	else
 		return NULL;
@@ -1595,7 +1695,8 @@ extern int makeTagEntry (const tagEntryInfo *const tag)
 	else
 		writeTagEntry (tag);
 
-	notifyMakeTagEntry (tag, r);
+	if (r != CORK_NIL)
+		notifyMakeTagEntry (tag, r);
 
 out:
 	return r;
@@ -1900,17 +2001,39 @@ extern void invalidatePatternCache(void)
 
 extern void tagFilePosition (MIOPos *p)
 {
-	if (TagFile.mio)
-		mio_getpos (TagFile.mio, p);
+	/* mini-geany doesn't set TagFile.mio. */
+	if 	(TagFile.mio == NULL)
+		return;
+
+	if (mio_getpos (TagFile.mio, p) == -1)
+		error (FATAL|PERROR,
+			   "failed to get file position of the tag file\n");
 }
 
 extern void setTagFilePosition (MIOPos *p)
 {
-	if (TagFile.mio)
-		mio_setpos (TagFile.mio, p);
+	/* mini-geany doesn't set TagFile.mio. */
+	if 	(TagFile.mio == NULL)
+		return;
+
+	if (mio_setpos (TagFile.mio, p) == -1)
+		error (FATAL|PERROR,
+			   "failed to set file position of the tag file\n");
 }
 
 extern const char* getTagFileDirectory (void)
 {
 	return TagFile.directory;
+}
+
+static bool markAsPlaceholder  (int index, tagEntryInfo *e, void *data CTAGS_ATTR_UNUSED)
+{
+	e->placeholder = 1;
+	markAllEntriesInScopeAsPlaceholder (index);
+	return true;
+}
+
+extern void markAllEntriesInScopeAsPlaceholder (int index)
+{
+	foreachEntriesInScope (index, NULL, markAsPlaceholder, NULL);
 }

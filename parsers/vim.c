@@ -20,6 +20,7 @@
 #include <stdio.h>
 #endif
 
+#include "debug.h"
 #include "entry.h"
 #include "parse.h"
 #include "read.h"
@@ -46,7 +47,8 @@ typedef enum {
 	K_FUNCTION,
 	K_MAP,
 	K_VARIABLE,
-	K_FILENAME
+	K_FILENAME,
+	K_CONST,
 } vimKind;
 
 static kindDefinition VimKinds [] = {
@@ -56,6 +58,7 @@ static kindDefinition VimKinds [] = {
 	{ true,  'm', "map",      "maps" },
 	{ true,  'v', "variable", "variable definitions" },
 	{ true,  'n', "filename", "vimball filename" },
+	{ true,  'C', "constant", "constant definitions" },
 };
 
 /*
@@ -224,13 +227,54 @@ static const unsigned char *readVimballLine (void)
 	return line;
 }
 
+static vString *parseSignature (const unsigned char *cp,
+								tagEntryInfo *e,
+								vString *buf)
+{
+	/* TODO capture parameters */
+
+	Assert (e);
+	Assert (cp);
+
+	if (!buf)
+	{
+		buf = vStringNew ();
+		vStringPut (buf, *cp);
+		++cp;
+	}
+
+	while (*cp != '\0')
+	{
+		if (isspace ((int) *cp)
+			&& vStringLast (buf) == ',')
+		{
+			++cp;
+			continue;
+		}
+		vStringPut (buf, *cp);
+		if (*cp == ')')
+			break;
+		++cp;
+	}
+
+	if (*cp == ')')
+	{
+		e->extensionFields.signature = vStringDeleteUnwrap (buf);
+		buf = NULL;
+	}
+
+	return buf;
+}
+
 static void parseFunction (const unsigned char *line)
 {
 	vString *name = vStringNew ();
+	vString *signature = NULL;
 	/* bool inFunction = false; */
 	int scope;
 	const unsigned char *cp = line;
 	int index = CORK_NIL;
+	tagEntryInfo *e = NULL;
 
 	if (*cp == '!')
 		++cp;
@@ -260,6 +304,15 @@ static void parseFunction (const unsigned char *line)
 				} while (isalnum ((int) *cp) || *cp == '_' || *cp == '.' || *cp == '#');
 				index = makeSimpleTag (name, K_FUNCTION);
 				vStringClear (name);
+
+				e = getEntryInCorkQueue (index);
+				if (e && isFieldEnabled (FIELD_SIGNATURE))
+				{
+					while (*cp && isspace ((int) *cp))
+						++cp;
+					if (*cp == '(')
+						signature = parseSignature (cp, e, NULL);
+				}
 			}
 		}
 	}
@@ -267,19 +320,28 @@ static void parseFunction (const unsigned char *line)
 	/* TODO - update struct to indicate inside function */
 	while ((line = readVimLine ()) != NULL)
 	{
-		if (wordMatchLen (line, "endfunction", 4))
+		if (signature)
 		{
-			tagEntryInfo *e;
-			if (index != CORK_NIL)
-			{
-				e = getEntryInCorkQueue (index);
+			cp = line;
+			while (*cp && isspace ((int) *cp))
+				++cp;
+			/* A backslash at the start of a line stands for a line continuation.
+			 * https://vimhelp.org/repeat.txt.html#line-continuation */
+			if (*cp == '\\')
+				signature = parseSignature (++cp, e, signature);
+		}
+
+		if (wordMatchLen (line, "endfunction", 4) || wordMatchLen (line, "enddef", 6))
+		{
+			if (e)
 				e->extensionFields.endLine = getInputLineNumber ();
-			}
 			break;
 		}
 
 		parseVimLine (line, true);
 	}
+	if (signature)
+		vStringDelete (signature);
 	vStringDelete (name);
 }
 
@@ -435,7 +497,7 @@ cleanUp:
 	return cmdProcessed;
 }
 
-static void parseLet (const unsigned char *line, int infunction)
+static void parseVariableOrConstant (const unsigned char *line, int infunction, int kindIndex)
 {
 	vString *name = vStringNew ();
 
@@ -485,7 +547,7 @@ static void parseLet (const unsigned char *line, int infunction)
 			vStringPut (name, (int) *cp);
 			++cp;
 		} while (isalnum ((int) *cp) || *cp == '_' || *cp == '#' || *cp == ':' || *cp == '$');
-		makeSimpleTag (name, K_VARIABLE);
+		makeSimpleTag (name, kindIndex);
 		vStringClear (name);
 	}
 
@@ -587,7 +649,7 @@ static bool parseVimLine (const unsigned char *line, int infunction)
 		parseMap (skipWord (line));
 	}
 
-	else if (wordMatchLen (line, "function", 2))
+	else if (wordMatchLen (line, "function", 2) || wordMatchLen (line, "def", 3))
 	{
 		parseFunction (skipWord (line));
 	}
@@ -599,7 +661,11 @@ static bool parseVimLine (const unsigned char *line, int infunction)
 
 	else if (wordMatchLen (line, "let", 3))
 	{
-		parseLet (skipWord (line), infunction);
+		parseVariableOrConstant (skipWord (line), infunction, K_VARIABLE);
+	}
+	else if (wordMatchLen (line, "const", 4))
+	{
+		parseVariableOrConstant (skipWord (line), infunction, K_CONST);
 	}
 
 	return readNextLine;

@@ -56,6 +56,10 @@ readtags_CFLAGS = $(COVERAGE_CFLAGS) $(WARNING_CFLAGS)
 dist_readtags_SOURCES = $(READTAGS_SRCS) $(READTAGS_HEADS)
 readtags_CPPFLAGS += -DREADTAGS_DSL -I$(srcdir)/dsl
 dist_readtags_SOURCES += $(READTAGS_DSL_SRCS) $(READTAGS_DSL_HEADS)
+if !HAVE_REGCOMP
+readtags_CPPFLAGS += $(REGCOMP_CPPFLAGS)
+dist_readtags_SOURCES += $(REGEX_SRCS) $(REGEX_HEADS)
+endif
 endif
 
 if !HAVE_FNMATCH
@@ -142,9 +146,9 @@ packcc_verbose_0 = @echo PACKCC "    $@";
 PACKCC = $(top_builddir)/packcc$(EXEEXT)
 SUFFIXES += .peg
 .peg.c:
-	$(packcc_verbose)$(PACKCC) -o $(top_builddir)/peg/$(*F) "$<"
+	$(packcc_verbose)$(PACKCC) -i \"general.h\" -o $(top_builddir)/peg/$(*F) "$<"
 .peg.h:
-	$(packcc_verbose)$(PACKCC) -o $(top_builddir)/peg/$(*F) "$<"
+	$(packcc_verbose)$(PACKCC) -i \"general.h\" -o $(top_builddir)/peg/$(*F) "$<"
 # You cannot use $(PACKCC) as a target name here.
 $(PEG_SRCS) $(PEG_HEADS): packcc$(EXEEXT) Makefile
 dist_libctags_a_SOURCES = $(ALL_LIB_HEADS) $(ALL_LIB_SRCS)
@@ -205,8 +209,10 @@ include $(top_srcdir)/makefiles/testing.mak
 include $(top_srcdir)/makefiles/help.mak
 
 if HAVE_RST2MAN
+# TODO: the list of man pages should be shared with man/Makefile.
 man_MANS = \
 	man/ctags.1 \
+	man/readtags.1 \
 	\
 	man/tags.5 \
 	\

@@ -244,12 +244,23 @@ bool cxxParserParseAndCondenseSubchainsUpToOneOf(
 					return false;
 				}
 			} else {
-				if(!cxxParserParseAndCondenseCurrentSubchain(
+				g_cxx.iNestingLevels++;
+
+				if(g_cxx.iNestingLevels > CXX_PARSER_MAXIMUM_NESTING_LEVELS)
+				{
+					CXX_DEBUG_LEAVE_TEXT("Nesting level grown too much: something nasty is going on");
+					return false;
+				}
+
+				bool bRet = cxxParserParseAndCondenseCurrentSubchain(
 						uInitialSubchainMarkerTypes,
 						(uTokenTypes & CXXTokenTypeEOF),
 						bCanReduceInnerElements
-					)
-				)
+					);
+
+				g_cxx.iNestingLevels--;
+
+				if(!bRet)
 				{
 					CXX_DEBUG_LEAVE_TEXT(
 							"Failed to parse subchain of type 0x%x",
@@ -483,8 +494,11 @@ static bool cxxParserParseEnumStructClassOrUnionFullDeclarationTrailer(
 	MIOPos oFilePosition = getInputFilePosition();
 	int iFileLine = getInputLineNumber();
 
-	if(!cxxParserParseUpToOneOf(CXXTokenTypeEOF | CXXTokenTypeSemicolon | CXXTokenTypeOpeningBracket
-								| CXXTokenTypeAssignment, false))
+	if(!cxxParserParseUpToOneOf(
+			CXXTokenTypeEOF | CXXTokenTypeSemicolon |
+				CXXTokenTypeOpeningBracket | CXXTokenTypeAssignment,
+			false
+		))
 	{
 		CXX_DEBUG_LEAVE_TEXT("Failed to parse up to EOF/semicolon");
 		return false;
@@ -545,29 +559,22 @@ static bool cxxParserParseEnumStructClassOrUnionFullDeclarationTrailer(
 		return true;
 	}
 
+	if(cxxTokenTypeIs(g_cxx.pToken,CXXTokenTypeAssignment))
+	{
+		if(!cxxParserParseUpToOneOf(
+				CXXTokenTypeEOF | CXXTokenTypeSemicolon,
+				false
+			))
+		{
+			CXX_DEBUG_LEAVE_TEXT("Failed to parse up to EOF/semicolon");
+			return false;
+		}
+	}
+
 	if(uKeywordState & CXXParserKeywordStateSeenTypedef)
 		cxxParserExtractTypedef(g_cxx.pTokenChain,true);
 	else
 		cxxParserExtractVariableDeclarations(g_cxx.pTokenChain,0);
-
-	/*
-	  Skip initializer in
-
-	  struct foo { ... } x = { ... };
-
-	  if we are at --------^.
-	  we go to ---------------------^.
-
-	  The above example is known case.
-	  To be tolerant and handle unrecognized case, we
-	  put the code for skipping here. */
-	if(cxxTokenTypeIs(g_cxx.pToken,CXXTokenTypeAssignment) &&
-	   (!cxxParserParseUpToOneOf(CXXTokenTypeEOF | CXXTokenTypeSemicolon, true)))
-	{
-		CXX_DEBUG_LEAVE_TEXT("Failed to parse up to EOF/semicolon");
-		return false;
-	}
-
 
 	CXX_DEBUG_LEAVE();
 	return true;
@@ -1844,6 +1851,8 @@ static rescanReason cxxParserMain(const unsigned int passCount)
 		);
 
 	g_cxx.iChar = ' ';
+
+	g_cxx.iNestingLevels = 0;
 
 	bool bRet = cxxParserParseBlock(false);
 

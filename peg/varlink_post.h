@@ -31,7 +31,8 @@ static void popKind (struct parserCtx *auxil, bool popScopeToo)
 	if (popScopeToo)
 	{
 		tagEntryInfo *e = getEntryInCorkQueue (auxil->scope_cork_index);
-		auxil->scope_cork_index = e->extensionFields.scopeIndex;
+		if (e)
+			auxil->scope_cork_index = e->extensionFields.scopeIndex;
 	}
 }
 
@@ -83,7 +84,7 @@ static void reportError (struct parserCtx *auxil)
 			 getInputFileName());
 }
 
-static int makeVarlikTag (struct parserCtx *auxil, const char *name, long offset)
+static int makeVarlinkTag (struct parserCtx *auxil, const char *name, long offset)
 {
 	tagEntryInfo e;
 	int k = peekKind (auxil);

@@ -652,13 +652,9 @@ static void deleteBlockData (NestingLevel *nl)
 		&& stringListCount (bdata->mixin) > 0)
 		attachMixinField (nl->corkIndex, bdata->mixin);
 
-	if (nl->corkIndex != CORK_NIL)
-	{
-		tagEntryInfo *e = getEntryInCorkQueue (nl->corkIndex);
-		if (e && !e->placeholder)
+	tagEntryInfo *e = getEntryInCorkQueue (nl->corkIndex);
+	if (e && !e->placeholder)
 			e->extensionFields.endLine = getInputLineNumber ();
-	}
-
 
 	if (bdata->mixin)
 		stringListDelete (bdata->mixin);
@@ -805,6 +801,52 @@ static int readStringAndEmitTag (const unsigned char **cp, rubyKind kind, int ro
 	return r;
 }
 
+static int readAndEmitDef (const unsigned char **cp)
+{
+	rubyKind kind = K_METHOD;
+	NestingLevel *nl = nestingLevelsGetCurrent (nesting);
+	tagEntryInfo *e_scope  = getEntryOfNestingLevel (nl);
+
+	/* if the def is inside an unnamed scope at the class level, assume
+	 * it's from a singleton from a construct like this:
+	 *
+	 * class C
+	 *   class << self
+	 *     def singleton
+	 *       ...
+	 *     end
+	 *   end
+	 * end
+	 */
+	if (e_scope && e_scope->kindIndex == K_CLASS && strlen (e_scope->name) == 0)
+		kind = K_SINGLETON;
+	int corkIndex = readAndEmitTag (cp, kind);
+	tagEntryInfo *e = getEntryInCorkQueue (corkIndex);
+
+	/* Fill signature: field. */
+	if (e)
+	{
+		vString *signature = vStringNewInit ("(");
+		skipWhitespace (cp);
+		if (**cp == '(')
+		{
+			++(*cp);
+			parseSignature (cp, signature);
+			if (vStringLast(signature) != ')')
+			{
+				vStringDelete (signature);
+				signature = NULL;
+			}
+		}
+		else
+			vStringPut (signature, ')');
+		e->extensionFields.signature = vStringDeleteUnwrap (signature);
+		signature = NULL;;
+		vStringDelete (signature);
+	}
+	return corkIndex;
+}
+
 static void findRubyTags (void)
 {
 	const unsigned char *line;
@@ -880,8 +922,9 @@ static void findRubyTags (void)
 		else if (canMatchKeywordWithAssign (&cp, "class"))
 		{
 			int r = readAndEmitTag (&cp, K_CLASS);
+			tagEntryInfo *e = getEntryInCorkQueue (r);
 
-			if (r != CORK_NIL)
+			if (e)
 			{
 				skipWhitespace (&cp);
 				if (*cp == '<' && *(cp + 1) != '<')
@@ -890,10 +933,7 @@ static void findRubyTags (void)
 					vString *parent = vStringNew ();
 					parseIdentifier (&cp, parent, K_CLASS);
 					if (vStringLength (parent) > 0)
-					{
-						tagEntryInfo *e = getEntryInCorkQueue (r);
 						e->extensionFields.inheritance = vStringDeleteUnwrap (parent);
-					}
 					else
 						vStringDelete (parent);
 				}
@@ -913,47 +953,7 @@ static void findRubyTags (void)
 		}
 		else if (canMatchKeywordWithAssign (&cp, "def"))
 		{
-			rubyKind kind = K_METHOD;
-			NestingLevel *nl = nestingLevelsGetCurrent (nesting);
-			tagEntryInfo *e  = getEntryOfNestingLevel (nl);
-
-			/* if the def is inside an unnamed scope at the class level, assume
-			 * it's from a singleton from a construct like this:
-			 *
-			 * class C
-			 *   class << self
-			 *     def singleton
-			 *       ...
-			 *     end
-			 *   end
-			 * end
-			 */
-			if (e && e->kindIndex == K_CLASS && strlen (e->name) == 0)
-				kind = K_SINGLETON;
-			int corkIndex = readAndEmitTag (&cp, kind);
-
-			/* Fill signature: field. */
-			if (corkIndex != CORK_NIL)
-			{
-				vString *signature = vStringNewInit ("(");
-				skipWhitespace (&cp);
-				if (*cp == '(')
-				{
-					++cp;
-					parseSignature (&cp, signature);
-					if (vStringLast(signature) != ')')
-					{
-						vStringDelete (signature);
-						signature = NULL;
-					}
-				}
-				else
-					vStringPut (signature, ')');
-				tagEntryInfo *e = getEntryInCorkQueue (corkIndex);
-				e->extensionFields.signature = vStringDeleteUnwrap (signature);
-				signature = NULL;;
-				vStringDelete (signature);
-			}
+			readAndEmitDef (&cp);
 		}
 		else if (canMatchKeywordWithAssign (&cp, "attr_reader"))
 		{
@@ -1001,6 +1001,19 @@ static void findRubyTags (void)
 		}
 		else if (canMatchKeywordWithAssign (&cp, "alias_method"))
 			readAliasMethodAndEmitTags (&cp);
+		else if ((canMatchKeywordWithAssign (&cp, "private")
+				  || canMatchKeywordWithAssign (&cp, "protected")
+				  || canMatchKeywordWithAssign (&cp, "public")
+				  || canMatchKeywordWithAssign (&cp, "private_class_method")
+				  || canMatchKeywordWithAssign (&cp, "public_class_method")))
+		{
+			skipWhitespace (&cp);
+			if (canMatchKeywordWithAssign (&cp, "def"))
+				readAndEmitDef (&cp);
+			/* TODO: store the method for controlling visibility
+			 * to the "access:" field of the tag.*/
+		}
+
 
 		while (*cp != '\0')
 		{

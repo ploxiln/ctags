@@ -65,7 +65,7 @@ PDBFLAG =
 {win32\mkstemp}.c{win32\mkstemp}.obj::
 	$(CC) $(OPT) $(DEFINES) $(INCLUDES) /Fowin32\mkstemp\ /c $<
 {peg}.peg{peg}.c::
-	$(PACKCC) $<
+	$(PACKCC) -i \"general.h\" $<
 {peg}.c{peg}.obj::
 	$(CC) $(OPT) $(DEFINES) $(INCLUDES) /Fopeg\ /c $<
 
@@ -76,8 +76,8 @@ ctags: ctags.exe
 ctags.exe: $(ALL_OBJS) $(ALL_HEADS) $(PEG_HEADS) $(PEG_EXTRA_HEADS) $(REGEX_HEADS) $(FNMATCH_HEADS) $(WIN32_HEADS) $(REPOINFO_HEADS)
 	$(CC) $(OPT) /Fe$@ $(ALL_OBJS) /link setargv.obj $(LIBS) $(PDBFLAG)
 
-readtags.exe: $(READTAGS_OBJS) $(READTAGS_HEADS)
-	$(CC) $(OPT) /Fe$@ $(READTAGS_OBJS) /link setargv.obj $(PDBFLAG)
+readtags.exe: $(READTAGS_OBJS) $(READTAGS_HEADS) $(REGEX_OBJS) $(REGEX_HEADS)
+	$(CC) $(OPT) /Fe$@ $(READTAGS_OBJS) $(REGEX_OBJS) /link setargv.obj $(PDBFLAG)
 
 $(REGEX_OBJS): $(REGEX_SRCS)
 	$(CC) /c $(OPT) /Fo$@ $(INCLUDES) $(DEFINES) $(REGEX_SRCS)
