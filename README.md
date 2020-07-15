@@ -11,6 +11,8 @@ release version numbers. See https://github.com/universal-ctags/ctags/issues/103
 So far, the plan is to only make "5.99.x" "beta" releases, at somewhat arbitrary points
 in the development, until the upstream makes 6.0 release, at which point this repo will cease.
 
+For release tarballs, see https://github.com/ploxiln/ctags/releases
+
 
 # Universal Ctags
 
