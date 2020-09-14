@@ -1,2 +1,2 @@
-{"_type": "program", "name": "Universal Ctags", "version": "5.99.2"}
+{"_type": "program", "name": "Universal Ctags", "version": "5.99.3"}
 {"_type": "completed", "command": "generate-tags"}
