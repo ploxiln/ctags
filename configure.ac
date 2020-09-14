@@ -407,12 +407,12 @@ case "$host" in
 esac
 AM_CONDITIONAL([HOST_MINGW], [test "x${host_mingw}" = "xyes"])
 
-AC_MSG_CHECKING(if compiler supprots statement expressions)
+AC_MSG_CHECKING(if compiler supports statement expressions)
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[
 int main(int argc, char **argv) {return ({ int x = 1; x + argc;});}
-])],[have_statment_expression_ext=yes],[have_statment_expression_ext=no])
-AC_MSG_RESULT($have_statment_expression_ext)
-if test yes = "$have_statment_expression_ext"; then
+])],[have_statement_expression_ext=yes],[have_statement_expression_ext=no])
+AC_MSG_RESULT($have_statement_expression_ext)
+if test yes = "$have_statement_expression_ext"; then
 	AC_DEFINE(HAVE_STATEMENT_EXPRESSION_EXT)
 fi
 
@@ -724,6 +724,7 @@ AC_CONFIG_FILES([Makefile
 		 man/ctags-client-tools.7.rst
 		 man/ctags-incompatibilities.7.rst
 		 man/ctags-optlib.7.rst
+		 man/ctags-lang-python.7.rst
 		 man/readtags.1.rst
 		 ])
 

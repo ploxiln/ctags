@@ -175,7 +175,9 @@ static const keywordAssoc KeywordTable [] = {
 	{ "assume",    K_ASSERTION, { 1, 0 } },
 	{ "bit",       K_REGISTER,  { 1, 0 } },
 	{ "byte",      K_REGISTER,  { 1, 0 } },
+	{ "chandle",   K_REGISTER,  { 1, 0 } },
 	{ "class",     K_CLASS,     { 1, 0 } },
+	{ "const",     K_IGNORE,    { 1, 0 } },
 	{ "cover",     K_ASSERTION, { 1, 0 } },
 	{ "covergroup",K_COVERGROUP,{ 1, 0 } },
 	{ "enum",      K_ENUM,      { 1, 0 } },
@@ -190,7 +192,10 @@ static const keywordAssoc KeywordTable [] = {
 	{ "program",   K_PROGRAM,   { 1, 0 } },
 	{ "property",  K_PROPERTY,  { 1, 0 } },
 	{ "pure",      K_IGNORE,    { 1, 0 } },
+	{ "rand",      K_IGNORE,    { 1, 0 } },
+	{ "randc",     K_IGNORE,    { 1, 0 } },
 	{ "ref",       K_PORT,      { 1, 0 } },
+	{ "sequence",  K_PROPERTY,  { 1, 0 } },
 	{ "shortint",  K_REGISTER,  { 1, 0 } },
 	{ "shortreal", K_REGISTER,  { 1, 0 } },
 	{ "static",    K_IGNORE,    { 1, 0 } },
@@ -201,6 +206,7 @@ static const keywordAssoc KeywordTable [] = {
 	{ "union",     K_STRUCT,    { 1, 0 } },
 	{ "unsigned",  K_IGNORE,    { 1, 0 } },
 	{ "virtual",   K_IGNORE,    { 1, 0 } },
+	{ "var",       K_REGISTER,  { 1, 0 } },
 	{ "void",      K_IGNORE,    { 1, 0 } }
 };
 
@@ -970,6 +976,43 @@ static void processEnum (tokenInfo *const token)
 	tagNameList (token, c);
 }
 
+static void processStruct (tokenInfo *const token)
+{
+	int c;
+
+	c = skipWhite (vGetc ());
+
+	/* Skip packed, signed, and unsigned */
+	while (isIdentifierCharacter (c))
+	{
+		readIdentifier (token, c);
+		c = skipWhite (vGetc ());
+	}
+
+	/* Skip struct contents */
+	if (c == '{')
+	{
+		c = skipWhite (skipPastMatch ("{}"));
+	}
+	else
+	{
+		verbose ("Prototype struct found \"%s\"\n", vStringValue (token->name));
+		token->kind = K_PROTOTYPE;
+		createTag (token);
+		return;
+	}
+
+	/* Skip packed_dimension */
+	while (c == '[')
+	{
+		c = skipWhite (skipPastMatch ("[]"));
+	}
+
+	/* Following identifiers are tag names */
+	verbose ("Find struct|union tags. Token %s kind %d\n", vStringValue (token->name), token->kind);
+	tagNameList (token, c);
+}
+
 static void processTypedef (tokenInfo *const token)
 {
 	int c;
@@ -997,10 +1040,22 @@ static void processTypedef (tokenInfo *const token)
 				token->kind = K_TYPEDEF;
 				processEnum (token);
 				return;
+			case K_STRUCT:
+				/* Call enum processing function */
+				token->kind = K_TYPEDEF;
+				processStruct (token);
+				return;
 			default :
 				break;
 		}
 
+		c = skipWhite (vGetc ());
+	}
+
+	/* Skip signed or unsiged */
+	if (isIdentifierCharacter (c))
+	{
+		readIdentifier (token, c);
 		c = skipWhite (vGetc ());
 	}
 
@@ -1021,15 +1076,6 @@ static void processTypedef (tokenInfo *const token)
 	if (c == '{')
 	{
 		c = skipWhite (skipPastMatch ("{}"));
-	}
-	else
-	{
-		/* Typedefs of struct/union that have no contents are forward
-		 * declarations and are considered prototypes */
-		if (token->kind == K_STRUCT)
-		{
-			currentContext->prototype = true;
-		}
 	}
 
 	/* Skip past class parameter override */
@@ -1196,8 +1242,8 @@ static void tagNameList (tokenInfo* token, int c)
 
 			if (localKind != K_UNDEFINED || isAlreadyTaggedAs (token, K_TYPEDEF))
 			{
-				/* Update kind unless it's a port or an ignored keyword */
-				if (token->kind != K_PORT && localKind != K_IGNORE)
+				/* Update kind unless it's a port, a constant (parameter) or an ignored keyword */
+				if (token->kind != K_PORT && token->kind != K_CONSTANT && localKind != K_IGNORE)
 				{
 					token->kind = localKind;
 				}
@@ -1295,6 +1341,10 @@ static void findTag (tokenInfo *const token)
 	else if (token->kind == K_ENUM)
 	{
 		processEnum (token);
+	}
+	else if (token->kind == K_STRUCT)
+	{
+		processStruct (token);
 	}
 	else if (token->kind == K_CLASS)
 	{
