@@ -92,7 +92,7 @@ jobs:
           make -C ${BUILDDIR}  clean
         )
     - name: send coverage info
-      if: matrix.compiler == 'gcc' && matrix.os == 'ubuntu-20.04'
+      if: matrix.compiler == 'gcc' && matrix.os == 'ubuntu-20.04' && false  # skip in ploxiln fork
       run: |
         # for f in /var/lib/gems/*/gems/lcoveralls-*/lib/lcoveralls/color_formatter.rb; do
         #     sudo sed -i -e 's/severity.capitalize!/severity = severity.capitalize/' $f
