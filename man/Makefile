@@ -47,7 +47,10 @@ IN_SOURCE_FILES = \
 	ctags-incompatibilities.7.rst.in \
 	ctags-client-tools.7.rst.in \
 	\
+	ctags-lang-julia.7.rst.in \
 	ctags-lang-python.7.rst.in \
+	ctags-lang-verilog.7.rst.in \
+	ctags-lang-inko.7.rst.in \
 	\
 	readtags.1.rst.in \
 	\

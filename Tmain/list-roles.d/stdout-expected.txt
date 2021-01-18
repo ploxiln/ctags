@@ -28,6 +28,8 @@ CUDA           d/macro           undef              on      undefined
 CUDA           h/header          local              on      local header
 CUDA           h/header          system             on      system header
 Cobol          S/sourcefile      copied             on      copied in source file
+CobolFree      S/sourcefile      copied             on      copied in source file
+CobolVariable  S/sourcefile      copied             on      copied in source file
 DTD            e/element         attOwner           on      attributes owner
 DTD            p/parameterEntity condition          on      conditions
 DTD            p/parameterEntity elementName        on      element names
@@ -40,6 +42,11 @@ HTML           C/stylesheet      extFile            on      referenced as extern
 HTML           J/script          extFile            on      referenced as external files
 HTML           c/class           attribute          on      assigned as attributes
 Java           p/package         imported           on      imported package
+Julia          n/module          imported           on      loaded by "import"
+Julia          n/module          namespace          on      only some symbols in it are imported
+Julia          n/module          used               on      loaded by "using"
+Julia          x/unknown         imported           on      loaded by "import"
+Julia          x/unknown         used               on      loaded by "using"
 Kconfig        k/kconfig         source             on      kconfig file loaded with source directive
 LdScript       i/inputSection    discarded          on      discarded when linking
 LdScript       i/inputSection    mapped             on      mapped to output section
@@ -78,6 +85,7 @@ SystemdUnit    u/unit            Wants              on      referred in Wants ke
 Tex            i/xinput          bibliography       on      bibliography (.bib) file
 Tex            i/xinput          included           on      external input file specified with \include
 Tex            i/xinput          input              on      external input file specified with \input
+VHDL           e/entity          desigend           on      designed by an architecture
 Vera           d/macro           undef              on      undefined
 Vera           h/header          local              on      local header
 Vera           h/header          system             on      system header
@@ -111,6 +119,8 @@ CUDA           d/macro           undef              on      undefined
 CUDA           h/header          local              on      local header
 CUDA           h/header          system             on      system header
 Cobol          S/sourcefile      copied             on      copied in source file
+CobolFree      S/sourcefile      copied             on      copied in source file
+CobolVariable  S/sourcefile      copied             on      copied in source file
 DTD            e/element         attOwner           on      attributes owner
 DTD            p/parameterEntity condition          on      conditions
 DTD            p/parameterEntity elementName        on      element names
@@ -123,6 +133,11 @@ HTML           C/stylesheet      extFile            on      referenced as extern
 HTML           J/script          extFile            on      referenced as external files
 HTML           c/class           attribute          on      assigned as attributes
 Java           p/package         imported           on      imported package
+Julia          n/module          imported           on      loaded by "import"
+Julia          n/module          namespace          on      only some symbols in it are imported
+Julia          n/module          used               on      loaded by "using"
+Julia          x/unknown         imported           on      loaded by "import"
+Julia          x/unknown         used               on      loaded by "using"
 Kconfig        k/kconfig         source             on      kconfig file loaded with source directive
 LdScript       i/inputSection    discarded          on      discarded when linking
 LdScript       i/inputSection    mapped             on      mapped to output section
@@ -161,6 +176,7 @@ SystemdUnit    u/unit            Wants              on      referred in Wants ke
 Tex            i/xinput          bibliography       on      bibliography (.bib) file
 Tex            i/xinput          included           on      external input file specified with \include
 Tex            i/xinput          input              on      external input file specified with \input
+VHDL           e/entity          desigend           on      designed by an architecture
 Vera           d/macro           undef              on      undefined
 Vera           h/header          local              on      local header
 Vera           h/header          system             on      system header

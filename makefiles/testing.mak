@@ -102,7 +102,7 @@ units: $(CTAGS_TEST)
 	if test x$(VG) = x1; then		\
 		VALGRIND=--with-valgrind;	\
 	fi;					\
-	if ! test x$(TRAVIS)$(APPVEYOR)$(CIRCLECI) = x; then	\
+	if ! test x$(TRAVIS)$(APPVEYOR)$(CIRCLECI)$(GITHUBACTIONS) = x; then	\
 		SHOW_DIFF_OUTPUT=--show-diff-output;		\
 	fi;							\
 	builddir=$$(pwd); \
@@ -135,13 +135,14 @@ units: $(CTAGS_TEST)
 		--with-timeout=`expr $(TIMEOUT) '*' 10`\
 		$${SHELL_OPT} \
 		$${SHOW_DIFF_OUTPUT}"; \
-	 TRAVIS=$(TRAVIS) APPVEYOR=$(APPVEYOR) CIRCLECI=$(CIRCLECI)\
+	 TRAVIS=$(TRAVIS) APPVEYOR=$(APPVEYOR) CIRCLECI=$(CIRCLECI) GITHUBACTIONS=$(GITHUBACTIONS)\
 		 $${PROG} $${c} $(srcdir)/Units $${builddir}/Units
 
 clean-units:
 	$(SILENT) echo Cleaning test units
-	$(SILENT) builddir=$$(pwd); \
-		$(SHELL) $(srcdir)/misc/units clean $${builddir}/Units
+	$(SILENT) if test -d $$(pwd)/Units; then \
+		$(SHELL) $(srcdir)/misc/units clean $$(pwd)/Units; \
+	fi
 
 #
 # VALIDATE-INPUT Target
@@ -156,12 +157,12 @@ validate-input:
 		VALIDATORS="--validators=$(VALIDATORS)"; \
 	fi; \
 	c="$(srcdir)/misc/units validate-input $${VALIDATORS}"; \
-	TRAVIS=$(TRAVIS) APPVEYOR=$(APPVEYOR) CIRCLECI=$(CIRCLECI)\
+	TRAVIS=$(TRAVIS) APPVEYOR=$(APPVEYOR) CIRCLECI=$(CIRCLECI) GITHUBACTIONS=$(GITHUBACTIONS)\
 		$(SHELL) $${c} $(srcdir)/Units $(srcdir)/misc/validators
 #
 # Test main part, not parsers
 #
-tmain: $(CTAGS_TEST)
+tmain: $(CTAGS_TEST) $(READ_TEST)
 	$(V_RUN) \
 	if test -n "$${ZSH_VERSION+set}"; then set -o SH_WORD_SPLIT; fi; \
 	if test x$(VG) = x1; then		\
@@ -196,13 +197,14 @@ tmain: $(CTAGS_TEST)
 		$${VALGRIND} \
 		$${SHELL_OPT} \
 		$${SHOW_DIFF_OUTPUT}"; \
-	TRAVIS=$(TRAVIS) APPVEYOR=$(APPVEYOR) CIRCLECI=$(CIRCLECI)\
+	TRAVIS=$(TRAVIS) APPVEYOR=$(APPVEYOR) CIRCLECI=$(CIRCLECI) GITHUBACTIONS=$(GITHUBACTIONS)\
 		$${PROG} $${c} $(srcdir)/Tmain $${builddir}/Tmain
 
 clean-tmain:
 	$(SILENT) echo Cleaning main part tests
-	$(SILENT) builddir=$$(pwd); \
-		$(SHELL) $(srcdir)/misc/units clean-tmain $${builddir}/Tmain
+	$(SILENT) if test -d $$(pwd)/Tmain; then \
+		$(SHELL) $(srcdir)/misc/units clean-tmain $$(pwd)/Tmain; \
+	fi
 
 tlib: $(MINI_GEANY_TEST)
 	$(V_RUN) \
@@ -274,4 +276,3 @@ CPPCHECK_FLAGS  = --enable=all
 cppcheck:
 	cppcheck $(CPPCHECK_DEFS) $(CPPCHECK_UNDEFS) $(CPPCHECK_FLAGS) \
 		 $$(git  ls-files | grep '^\(parsers\|main\)/.*\.[ch]' )
-

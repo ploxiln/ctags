@@ -8,7 +8,7 @@ Input text stream
 	    :scale: 80%
 
 Function prototypes for handling input text stream are declared in
-main/read.h. The file exists in exuberant ctags, too.  However, the
+main/read.h. The file exists in Exuberant Ctags, too.  However, the
 names functions are changed when overhauling ``--line-directive``
 option. (In addition macros were converted to functions for making
 data structures for the input text stream opaque.)
@@ -265,10 +265,10 @@ tokenInfo API
 
 .. NOT REVIEWED YET
 
-In Exuberant-ctags, a developer can write a parser anyway; only input
+In Exuberant Ctags, a developer can write a parser anyway; only input
 stream and tagEntryInfo data structure is given.
 
-However, while maintaining Universal-ctags I (Masatake YAMATO) think
+However, while maintaining Universal Ctags I (Masatake YAMATO) think
 we should have a framework for writing parser. Of course the framework
 is optional; you can still write a parser without the framework.
 
@@ -421,3 +421,21 @@ An example can be found in DTS parser:
 
 Setting `requestAutomaticFQTag` to `TRUE` implies setting
 `useCork` to `CORK_QUEUE`.
+
+PACKCC compiler-compiler
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Packcc is a compiler-compiler; it translates .peg grammar file to .c
+file.  packcc was originally written by Arihiro Yoshida. Its source
+repository is at sourceforge. It seems that packcc at sourceforge is
+not actively maintained. Some derived repositories are at
+github. Currently, our choice is
+https://github.com/enechaev/packcc. It is the most active one in the
+derived repositories.
+
+The source tree of packcc is grafted at misc/packcc directory.
+Building packcc and ctags are integrated in the build-scripts of
+Universal Ctags.
+
+.. TODO:
+	refer peg/* as a sample implementation

@@ -313,6 +313,7 @@ static int addExtensionFields (tagWriter *writer, MIO *mio, const tagEntryInfo *
 	length += renderExtensionFieldMaybe (writer, FIELD_EXTRAS, tag, sep, mio);
 	length += renderExtensionFieldMaybe (writer, FIELD_XPATH, tag, sep, mio);
 	length += renderExtensionFieldMaybe (writer, FIELD_END_LINE, tag, sep, mio);
+	length += renderExtensionFieldMaybe (writer, FIELD_EPOCH, tag, sep, mio);
 
 	return length;
 }
@@ -345,7 +346,7 @@ static int writeCtagsEntry (tagWriter *writer,
 	else
 	{
 		if (Option.locate == EX_COMBINE)
-			length += mio_printf(mio, "%lu;", tag->lineNumber + (Option.backward? 1: -1));
+			length += mio_printf(mio, "%lu;", tag->lineNumber);
 		length += mio_puts(mio, escapeFieldValue(writer, tag, FIELD_PATTERN));
 	}
 

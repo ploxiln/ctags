@@ -126,12 +126,12 @@ static parserDefinition *FallbackParser (void);
 static parserDefinition *CTagsParser (void);
 static parserDefinition *CTagsSelfTestParser (void);
 static parserDefinitionFunc* BuiltInParsers[] = {
-	CTagsParser,				/* This must be first entry. */
-	FallbackParser,				/* LANG_FALLBACK */
-	CTagsSelfTestParser,
 #ifdef EXTERNAL_PARSER_LIST
 	EXTERNAL_PARSER_LIST
 #else  /* ! EXTERNAL_PARSER_LIST */
+	CTagsParser,				/* This must be first entry. */
+	FallbackParser,				/* LANG_FALLBACK */
+	CTagsSelfTestParser,
 
 	PARSER_LIST,
 	XML_PARSER_LIST
@@ -1369,6 +1369,7 @@ struct GetLanguageRequest {
 	enum { GLR_OPEN, GLR_DISCARD, GLR_REUSE, } type;
 	const char *const fileName;
 	MIO *mio;
+	time_t mtime;
 };
 
 static langType
@@ -1466,7 +1467,13 @@ getFileLanguageForRequestInternal (struct GetLanguageRequest *req)
 
   cleanup:
 	if (req->type == GLR_OPEN && glc.input)
+	{
 		req->mio = mio_ref (glc.input);
+		if (!fstatus)
+			fstatus = eStat (fileName);
+		if (fstatus)
+			req->mtime = fstatus->mtime;
+	}
     GLC_FCLOSE(&glc);
     if (fstatus)
 	    eStatFree (fstatus);
@@ -1516,6 +1523,7 @@ extern langType getLanguageForFilenameAndContents (const char *const fileName)
 	struct GetLanguageRequest req = {
 		.type = GLR_DISCARD,
 		.fileName = fileName,
+		.mtime = (time_t)0,
 	};
 
 	return getFileLanguageForRequest (&req);
@@ -3834,7 +3842,8 @@ static bool createTagsWithFallback1 (const langType language,
 	if (useCork)
 		corkTagFile(corkFlags);
 
-	addParserPseudoTags (language);
+	if (isXtagEnabled (XTAG_PSEUDO_TAGS))
+		addParserPseudoTags (language);
 	initializeParserStats (parser);
 	tagFilePosition (&tagfpos);
 
@@ -3917,14 +3926,14 @@ extern bool runParserInNarrowedInputStream (const langType language,
 
 static bool createTagsWithFallback (
 	const char *const fileName, const langType language,
-	MIO *mio, bool *failureInOpenning)
+	MIO *mio, time_t mtime, bool *failureInOpenning)
 {
 	langType exclusive_subparser = LANG_IGNORE;
 	bool tagFileResized = false;
 
 	Assert (0 <= language  &&  language < (int) LanguageCount);
 
-	if (!openInputFile (fileName, language, mio))
+	if (!openInputFile (fileName, language, mio, mtime))
 	{
 		*failureInOpenning = true;
 		return false;
@@ -4031,11 +4040,11 @@ static void addParserPseudoTags (langType language)
 	parserObject *parser = LanguageTable + language;
 	if (!parser->pseudoTagPrinted)
 	{
-		makePtagIfEnabled (PTAG_KIND_DESCRIPTION, language, parser);
-		makePtagIfEnabled (PTAG_KIND_SEPARATOR, language, parser);
-		makePtagIfEnabled (PTAG_FIELD_DESCRIPTION, language, parser);
-		makePtagIfEnabled (PTAG_EXTRA_DESCRIPTION, language, parser);
-
+		for (int i = 0; i < PTAG_COUNT; i++)
+		{
+			if (isPtagParserSpecific (i))
+				makePtagIfEnabled (i, language, parser);
+		}
 		parser->pseudoTagPrinted = 1;
 	}
 }
@@ -4081,7 +4090,7 @@ extern bool parseFile (const char *const fileName)
 	return bRet;
 }
 
-static bool parseMio (const char *const fileName, langType language, MIO* mio, bool useSourceFileTagPath,
+static bool parseMio (const char *const fileName, langType language, MIO* mio, time_t mtime, bool useSourceFileTagPath,
 					  void *clientData)
 {
 	bool tagFileResized = false;
@@ -4093,7 +4102,7 @@ static bool parseMio (const char *const fileName, langType language, MIO* mio, b
 
 	initParserTrashBox ();
 
-	tagFileResized = createTagsWithFallback (fileName, language, mio, &failureInOpenning);
+	tagFileResized = createTagsWithFallback (fileName, language, mio, mtime, &failureInOpenning);
 
 	finiParserTrashBox ();
 
@@ -4115,6 +4124,7 @@ extern bool parseFileWithMio (const char *const fileName, MIO *mio,
 		.fileName = fileName,
 		.mio = mio,
 	};
+	memset (&req.mtime, 0, sizeof (req.mtime));
 
 	language = getFileLanguageForRequest (&req);
 	Assert (language != LANG_AUTO);
@@ -4139,7 +4149,7 @@ extern bool parseFileWithMio (const char *const fileName, MIO *mio,
 		/* TODO: checkUTF8BOM can be used to update the encodings. */
 		openConverter (getLanguageEncoding (language), Option.outputEncoding);
 #endif
-		tagFileResized = parseMio (fileName, language, req.mio, true, clientData);
+		tagFileResized = parseMio (fileName, language, req.mio, req.mtime, true, clientData);
 		if (Option.filter && ! Option.interactive)
 			closeTagFile (tagFileResized);
 		addTotals (1, 0L, 0L);
@@ -4164,7 +4174,7 @@ extern bool parseRawBuffer(const char *fileName, unsigned char *buffer,
 	if (buffer)
 		mio = mio_new_memory (buffer, bufferSize, NULL, NULL);
 
-	r = parseMio (fileName, language, mio, false, clientData);
+	r = parseMio (fileName, language, mio, (time_t)0, false, clientData);
 
 	if (buffer)
 		mio_unref (mio);
@@ -4541,6 +4551,30 @@ static bool makeKindDescriptionPseudoTag (kindDefinition *kind,
 	return false;
 }
 
+static bool makeRoleDescriptionPseudoTag (kindDefinition *kind,
+										  roleDefinition *role,
+										  void *user_data)
+{
+	struct makeKindDescriptionPseudoTagData *data = user_data;
+
+	vString *parser_and_kind_name = vStringNewInit (data->langName);
+	vStringCatS (parser_and_kind_name, PSEUDO_TAG_SEPARATOR);
+	vStringCatS (parser_and_kind_name, kind->name);
+
+	vString *description = vStringNew ();
+	const char *d = role->description? role->description: role->name;
+	vStringCatSWithEscapingAsPattern (description, d);
+
+	data->written |=  writePseudoTag (data->pdesc, role->name,
+									  vStringValue (description),
+									  vStringValue (parser_and_kind_name));
+
+	vStringDelete (description);
+	vStringDelete (parser_and_kind_name);
+
+	return false;
+}
+
 extern bool makeKindDescriptionsPseudoTags (const langType language,
 					    const ptagDesc *pdesc)
 {
@@ -4648,6 +4682,47 @@ extern bool makeExtraDescriptionsPseudoTags (const langType language,
 		}
 	}
 	return written;
+}
+
+extern bool makeRoleDescriptionsPseudoTags (const langType language,
+											const ptagDesc *pdesc)
+{
+	parserObject *parser;
+	struct kindControlBlock *kcb;
+	parserDefinition* lang;
+	kindDefinition *kind;
+	struct makeKindDescriptionPseudoTagData data;
+
+	Assert (0 <= language  &&  language < (int) LanguageCount);
+	parser = LanguageTable + language;
+	kcb = parser->kindControlBlock;
+	lang = parser->def;
+
+	unsigned int kindCount = countKinds(kcb);
+
+	data.langName = lang->name;
+	data.pdesc = pdesc;
+	data.written = false;
+
+	for (unsigned int i = 0; i < kindCount; ++i)
+	{
+		if (!isLanguageKindEnabled (language, i))
+			continue;
+
+		kind = getKind (kcb, i);
+
+		unsigned int roleCount = countRoles (kcb, i);
+		for (unsigned int j = 0; j < roleCount; ++j)
+		{
+			if (isRoleEnabled (kcb, i, j))
+			{
+				roleDefinition *role = getRole (kcb, i, j);
+				makeRoleDescriptionPseudoTag (kind, role, &data);
+			}
+		}
+	}
+
+	return data.written;
 }
 
 /*
@@ -5067,6 +5142,7 @@ typedef enum {
 	K_ENABLED,
 	K_ROLES,
 	K_ROLES_DISABLED,
+	K_FIELD_TESTING,
 	KIND_COUNT
 } CTST_Kind;
 
@@ -5145,6 +5221,26 @@ static kindDefinition CTST_Kinds[KIND_COUNT] = {
 	 .referenceOnly = true, ATTACH_ROLES (CTST_RolesKindRoles)},
 	{false, 'R', "rolesDisabled", "emit a tag with multi roles(disabled by default)",
 	 .referenceOnly = true, ATTACH_ROLES (CTST_RolesDisabledKindRoles)},
+	{true,  'f', "fieldMaker", "tag for testing field:" },
+};
+
+typedef enum {
+	F_BOOLEAN_FIELD,
+	F_BOOLEAN_AND_STRING_FIELD,
+	COUNT_FIELD
+} CTSTField;
+
+static fieldDefinition CTSTFields[COUNT_FIELD] = {
+	{ .name = "bField",
+	  .description = "field for testing boolean type",
+	  .dataType = FIELDTYPE_BOOL,
+	  .enabled = true,
+	},
+	{ .name = "sbField",
+	  .description = "field for testing string|boolean type",
+	  .dataType = FIELDTYPE_STRING|FIELDTYPE_BOOL,
+	  .enabled = true,
+	},
 };
 
 static void createCTSTTags (void)
@@ -5278,6 +5374,35 @@ static void createCTSTTags (void)
 						makeTagEntry (&e);
 						break;
 					}
+					case K_FIELD_TESTING:
+					{
+						char c = 'a';
+						char name []= {'\0', 't', 'a', 'g', '\0' };
+
+						name [0] = c++;
+						initTagEntry (&e, name, i);
+						attachParserField (&e, false,
+										   CTSTFields[F_BOOLEAN_FIELD].ftype, "");
+						makeTagEntry (&e);
+
+						name [0] = c++;
+						initTagEntry (&e, name, i);
+						makeTagEntry (&e);
+
+						name [0] = c++;
+						initTagEntry (&e, name, i);
+						attachParserField (&e, false,
+										   CTSTFields[F_BOOLEAN_AND_STRING_FIELD].ftype, "val");
+						makeTagEntry (&e);
+
+						name [0] = c++;
+						initTagEntry (&e, name, i);
+						attachParserField (&e, false,
+										   CTSTFields[F_BOOLEAN_AND_STRING_FIELD].ftype, "");
+						makeTagEntry (&e);
+
+						break;
+					}
 				}
 			}
 	}
@@ -5309,5 +5434,8 @@ static parserDefinition *CTagsSelfTestParser (void)
 	def->useCork = CORK_QUEUE;
 	def->initStats = initStatsCTST;
 	def->printStats = printStatsCTST;
+	def->fieldTable = CTSTFields;
+	def->fieldCount = ARRAY_SIZE (CTSTFields);
+
 	return def;
 }

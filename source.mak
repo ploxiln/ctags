@@ -183,12 +183,15 @@ PARSER_HEADS = \
 	parsers/m4.h \
 	parsers/make.h \
 	parsers/perl.h \
+	parsers/r.h \
 	parsers/tcl.h \
 	parsers/tex.h \
 	\
 	$(NULL)
 
 PARSER_SRCS =				\
+	parsers/abaqus.c		\
+	parsers/abc.c			\
 	parsers/ada.c			\
 	parsers/ant.c			\
 	parsers/asciidoc.c		\
@@ -237,12 +240,15 @@ PARSER_SRCS =				\
 	parsers/fortran.c		\
 	parsers/fypp.c			\
 	parsers/go.c			\
+	parsers/haskell.c		\
+	parsers/haxe.c			\
 	parsers/html.c			\
 	parsers/iniconf.c		\
 	parsers/itcl.c			\
 	parsers/jprop.c			\
 	parsers/jscript.c		\
 	parsers/json.c			\
+	parsers/julia.c			\
 	parsers/ldscript.c		\
 	parsers/lisp.c			\
 	parsers/lua.c			\
@@ -262,6 +268,8 @@ PARSER_SRCS =				\
 	parsers/protobuf.c		\
 	parsers/python.c		\
 	parsers/pythonloggingconfig.c	\
+	parsers/r-r6class.c		\
+	parsers/r-s4class.c		\
 	parsers/r.c			\
 	parsers/rexx.c			\
 	parsers/robot.c			\
@@ -280,6 +288,7 @@ PARSER_SRCS =				\
 	parsers/tex.c			\
 	parsers/tex-beamer.c		\
 	parsers/ttcn.c			\
+	parsers/txt2tags.c		\
 	parsers/typescript.c		\
 	parsers/verilog.c		\
 	parsers/vhdl.c			\
@@ -337,7 +346,7 @@ WIN32_SRCS = win32/mkstemp/mkstemp.c
 WIN32_OBJS = $(WIN32_SRCS:.c=.$(OBJEXT))
 
 READTAGS_DSL_HEADS = \
-	dsl/es-lang-c-stdc99.h \
+	dsl/es.h \
 	dsl/dsl.h \
 	dsl/qualifier.h \
 	dsl/sorter.h \
@@ -347,7 +356,7 @@ READTAGS_DSL_HEADS = \
 	$(NULL)
 
 READTAGS_DSL_SRCS = \
-	dsl/es-lang-c-stdc99.c \
+	dsl/es.c \
 	dsl/dsl.c \
 	dsl/qualifier.c \
 	dsl/sorter.c \

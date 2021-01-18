@@ -112,6 +112,7 @@ typedef struct sInputFile {
 	inputLineFposMap lineFposMap;
 	vString *allLines;
 	int thinDepth;
+	time_t mtime;
 } inputFile;
 
 static inputLangInfo inputLang;
@@ -122,6 +123,7 @@ static langType sourceLang;
 */
 static void     langStackInit (langStack *langStack);
 static langType langStackTop  (langStack *langStack);
+static langType langStackBotom(langStack *langStack);
 static void     langStackPush (langStack *langStack, langType type);
 static langType langStackPop  (langStack *langStack);
 static void     langStackClear(langStack *langStack);
@@ -431,6 +433,12 @@ static void resetLangOnStack (inputLangInfo *langInfo, langType lang)
 	langStackPush (& (langInfo->stack), lang);
 }
 
+extern langType baseLangOnStack (inputLangInfo *langInfo)
+{
+	Assert (langInfo->stack.count > 0);
+	return langStackBotom (& (langInfo->stack));
+}
+
 static void pushLangOnStack (inputLangInfo *langInfo, langType lang)
 {
 	langStackPush (& langInfo->stack, lang);
@@ -597,8 +605,8 @@ static bool parseLineDirective (char *s)
 #define MAX_IN_MEMORY_FILE_SIZE (1024*1024)
 #endif
 
-extern MIO *getMio (const char *const fileName, const char *const openMode,
-		    bool memStreamRequired)
+static MIO *getMioFull (const char *const fileName, const char *const openMode,
+		    bool memStreamRequired, time_t *mtime)
 {
 	FILE *src;
 	fileStatus *st;
@@ -607,6 +615,8 @@ extern MIO *getMio (const char *const fileName, const char *const openMode,
 
 	st = eStat (fileName);
 	size = st->size;
+	if (mtime)
+		*mtime = st->mtime;
 	eStatFree (st);
 	if ((!memStreamRequired)
 	    && (size > MAX_IN_MEMORY_FILE_SIZE || size == 0))
@@ -628,6 +638,12 @@ extern MIO *getMio (const char *const fileName, const char *const openMode,
 	}
 	fclose (src);
 	return mio_new_memory (data, size, eRealloc, eFreeNoNullCheck);
+}
+
+extern MIO *getMio (const char *const fileName, const char *const openMode,
+		    bool memStreamRequired)
+{
+	return getMioFull (fileName, openMode, memStreamRequired, NULL);
 }
 
 /* Return true if utf8 BOM is found */
@@ -664,7 +680,7 @@ static void rewindInputFile (inputFile *f)
  *  fails, it will display an error message and leave the File.mio set to NULL.
  */
 extern bool openInputFile (const char *const fileName, const langType language,
-			      MIO *mio)
+			      MIO *mio, time_t mtime)
 {
 	const char *const openMode = "rb";
 	bool opened = false;
@@ -701,7 +717,7 @@ extern bool openInputFile (const char *const fileName, const langType language,
 			mio_rewind (mio);
 	}
 
-	File.mio = mio? mio_ref (mio): getMio (fileName, openMode, memStreamRequired);
+	File.mio = mio? mio_ref (mio): getMioFull (fileName, openMode, memStreamRequired, &File.mtime);
 
 	if (File.mio == NULL)
 		error (WARNING | PERROR, "cannot open \"%s\"", fileName);
@@ -709,6 +725,8 @@ extern bool openInputFile (const char *const fileName, const langType language,
 	{
 		opened = true;
 
+		if (File.mio == mio)
+			File.mtime = mtime;
 
 		File.bomFound = checkUTF8BOM (File.mio, true);
 
@@ -739,6 +757,11 @@ extern bool openInputFile (const char *const fileName, const langType language,
 				 memStreamRequired? ",required": "");
 	}
 	return opened;
+}
+
+extern time_t getInputFileMtime (void)
+{
+	return File.mtime;
 }
 
 extern void resetInputFile (const langType language)
@@ -851,9 +874,9 @@ static eolType readLine (vString *const vLine, MIO *const mio)
 		 * CR (Mac OS 9). As CR-only EOL isn't handled by gets() and Mac OS 9
 		 * is dead, we only handle CR-LF EOLs and convert them into LF. */
 		if (newLine && vStringLength (vLine) > 1 &&
-			vStringItem (vLine, vStringLength (vLine) - 2) == '\r')
+			vStringChar (vLine, vStringLength (vLine) - 2) == '\r')
 		{
-			vStringItem (vLine, vStringLength (vLine) - 2) = '\n';
+			vStringChar (vLine, vStringLength (vLine) - 2) = '\n';
 			vStringChop (vLine);
 			r = eol_cr_nl;
 		}
@@ -1154,6 +1177,11 @@ extern langType popLanguage (void)
 	return popLangOnStack (& inputLang);
 }
 
+extern langType getLanguageForBaseParser (void)
+{
+	return baseLangOnStack (& inputLang);
+}
+
 static void langStackInit (langStack *langStack)
 {
 	langStack->count = 0;
@@ -1166,6 +1194,12 @@ static langType langStackTop (langStack *langStack)
 {
 	Assert (langStack->count > 0);
 	return langStack->languages [langStack->count - 1];
+}
+
+static langType langStackBotom(langStack *langStack)
+{
+	Assert (langStack->count > 0);
+	return langStack->languages [0];
 }
 
 static void     langStackClear (langStack *langStack)
