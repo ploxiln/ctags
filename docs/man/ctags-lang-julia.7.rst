@@ -6,7 +6,7 @@ ctags-lang-julia
 -------------------------------------------------------------------
 Random notes about tagging Julia source code with Universal-ctags
 -------------------------------------------------------------------
-:Version: 5.99.3
+:Version: 5.99.4
 :Manual group: Universal-ctags
 :Manual section: 7
 

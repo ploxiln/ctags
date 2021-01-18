@@ -8,7 +8,7 @@
 !_TAG_PROGRAM_AUTHOR	Universal Ctags Team	//
 !_TAG_PROGRAM_NAME	Universal Ctags	/Derived from Exuberant Ctags/
 !_TAG_PROGRAM_URL	https://ctags.io/	/official site/
-!_TAG_PROGRAM_VERSION	5.99.3	/a8bf418d/
+!_TAG_PROGRAM_VERSION	5.99.4	/a8bf418d/
 M	duplicated-names.c	/^int M (void) { return 0; }$/;"	f	line:24	typeref:typename:int
 N	duplicated-names.c	/^int N;$/;"	v	line:9	typeref:typename:int
 O	duplicated-names.c	/^int O (void) { return 0; }$/;"	f	line:7	typeref:typename:int

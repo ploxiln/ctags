@@ -4,7 +4,7 @@
 ctags-lang-verilog
 ======================================================================
 
-:Version: 5.99.3
+:Version: 5.99.4
 :Manual group: Universal Ctags
 :Manual section: 7
 
